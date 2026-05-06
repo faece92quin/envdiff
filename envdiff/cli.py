@@ -4,86 +4,77 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import List, Optional
+from pathlib import Path
 
 from envdiff.comparator import compare_envs
+from envdiff.exporter import ExportFormat, export
 from envdiff.loader import EnvLoadError, load_env_file
 from envdiff.reporter import print_report
+from envdiff.sorter import group_diff
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="envdiff",
-        description="Compare .env files across environments and surface missing or mismatched keys.",
+        description="Compare .env files across environments.",
     )
-    parser.add_argument(
-        "base",
-        metavar="BASE",
-        help="Path to the base .env file (e.g. .env or .env.example).",
-    )
-    parser.add_argument(
-        "target",
-        metavar="TARGET",
-        help="Path to the target .env file to compare against BASE.",
-    )
+    parser.add_argument("base", type=Path, help="Base .env file")
+    parser.add_argument("target", type=Path, help="Target .env file to compare against base")
     parser.add_argument(
         "--ignore-values",
         action="store_true",
         default=False,
-        help="Only compare keys; ignore value differences.",
+        help="Report only missing keys; ignore value mismatches",
     )
     parser.add_argument(
-        "--format",
-        choices=["text", "json"],
-        default="text",
-        dest="output_format",
-        help="Output format (default: text).",
-    )
-    parser.add_argument(
-        "--no-color",
+        "--no-colour",
         action="store_true",
         default=False,
-        help="Disable ANSI color codes in text output.",
+        help="Disable ANSI colour output",
+    )
+    parser.add_argument(
+        "--export",
+        metavar="FORMAT",
+        choices=("json", "csv"),
+        default=None,
+        help="Export diff to stdout in the given format (json or csv) instead of human-readable output",
+    )
+    parser.add_argument(
+        "--output",
+        metavar="FILE",
+        type=Path,
+        default=None,
+        help="Write export output to FILE instead of stdout (requires --export)",
     )
     return parser
 
 
-def run(argv: Optional[List[str]] = None) -> int:
-    """Entry point for the CLI.
-
-    Returns:
-        Exit code: 0 if no differences found, 1 if differences exist, 2 on error.
-    """
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
+def run(args: argparse.Namespace) -> int:
     try:
         base_env = load_env_file(args.base)
         target_env = load_env_file(args.target)
     except EnvLoadError as exc:
-        print(f"envdiff error: {exc}", file=sys.stderr)
+        print(f"envdiff: error: {exc}", file=sys.stderr)
         return 2
 
-    result = compare_envs(
-        base_env.data,
-        target_env.data,
-        ignore_values=args.ignore_values,
-    )
+    result = compare_envs(base_env, target_env, ignore_values=args.ignore_values)
+    grouped = group_diff(result)
 
-    print_report(
-        result,
-        base_label=base_env.name,
-        target_label=target_env.name,
-        output_format=args.output_format,
-        color=not args.no_color,
-    )
+    if args.export:
+        fmt: ExportFormat = args.export  # type: ignore[assignment]
+        output_text = export(result, grouped, fmt)
+        if args.output:
+            args.output.write_text(output_text, encoding="utf-8")
+        else:
+            print(output_text, end="")
+    else:
+        colour = not args.no_colour
+        print_report(result, grouped, colour=colour)
 
-    return 1 if result.has_differences() else 0
+    return 1 if result.has_differences else 0
 
 
 def main() -> None:  # pragma: no cover
-    sys.exit(run())
-
-
-if __name__ == "__main__":  # pragma: no cover
-    main()
+    parser = build_parser()
+    args = parser.parse_args()
+    sys.exit(run(args))
