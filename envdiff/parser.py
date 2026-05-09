@@ -70,3 +70,21 @@ def _parse_value(raw: str) -> Optional[str]:
         raw = raw[:comment_index].strip()
 
     return raw
+
+
+def get_keys(filepath: str | Path) -> list[str]:
+    """Return a sorted list of variable names defined in a .env file.
+
+    This is a convenience wrapper around :func:`parse_env_file` useful for
+    quickly inspecting which keys are present without caring about values.
+
+    Args:
+        filepath: Path to the .env file.
+
+    Returns:
+        Sorted list of variable name strings.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+    """
+    return sorted(parse_env_file(filepath).keys())
